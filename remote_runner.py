@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
+import subprocess
+import os
 import sys
+from datetime import datetime
 
 sys.path.insert(0, "/mnt/c/Users/uh/code/my/remote")
 
@@ -92,3 +95,64 @@ class BackendManager:
         if self._backend:
             self._backend.close()
             self._backend = None
+
+
+class SyncError(Exception):
+    pass
+
+
+class SyncManager:
+    def __init__(self, backend: BackendManager, config: SyncConfig):
+        self.backend = backend
+        self.config = config
+
+    def sync(self, current_file: str) -> None:
+        if not self.config.enabled:
+            return
+
+        patch = self._generate_patch(current_file)
+        if not patch.strip():
+            return
+
+        self._apply_patch(patch)
+        self._create_local_commit()
+        self._create_remote_commit()
+
+    def _generate_patch(self, current_file: str) -> str:
+        result = subprocess.run(
+            ["git", "diff", "HEAD", "--", ":!'" + current_file + "'"],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.abspath(current_file)) or ".",
+        )
+        return result.stdout
+
+    def _apply_patch(self, patch: str) -> None:
+        if not patch.strip():
+            return
+
+        apply_cmd = f"cd {self.config.remote_path} && git apply -"
+        result = self.backend.execute_with_result(f"echo '{patch}' | {apply_cmd}")
+
+        if result.returncode != 0:
+            raise SyncError(f"Failed to apply patch: {result.stderr if result.stderr else result.stdout}")
+
+    def _create_local_commit(self) -> None:
+        subprocess.run(["git", "add", "-A"], capture_output=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        result = subprocess.run(
+            ["git", "commit", "-m", f"chore: sync {timestamp}"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 and "nothing to commit" not in result.stderr:
+            raise SyncError(f"Failed to create local commit: {result.stderr}")
+
+    def _create_remote_commit(self) -> None:
+        config = self.backend._config
+        if config.type == "ssh":
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            remote_cmd = f"cd {self.config.remote_path} && git add -A && git commit -m 'chore: sync {timestamp}'"
+            result = self.backend.execute_with_result(remote_cmd)
+            if result.returncode != 0 and "nothing to commit" not in result.stderr:
+                raise SyncError(f"Failed to create remote commit: {result.stderr if result.stderr else result.stdout}")
