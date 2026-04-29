@@ -226,3 +226,39 @@ class SyncManager:
             result = self.backend.execute_with_result(remote_cmd)
             if result.returncode != 0 and "nothing to commit" not in result.stderr:
                 raise SyncError(f"Failed to create remote commit: {result.stderr if result.stderr else result.stdout}")
+
+
+def main(config: Config) -> None:
+    manager = BackendManager(config.connection)
+    try:
+        if config.sync.enabled:
+            sync_mgr = SyncManager(manager, config.sync)
+            sync_mgr.sync(__file__)
+
+        executor = TaskExecutor(manager, config.execute)
+        executor.execute_pipeline()
+    finally:
+        manager.close()
+
+
+if __name__ == "__main__":
+    config = Config(
+        connection=ConnectionConfig(
+            type="ssh",
+            host="example.com",
+            username="user",
+            password="pass",
+        ),
+        sync=SyncConfig(
+            enabled=True,
+            remote_path="/home/user/project",
+        ),
+        execute=ExecuteConfig(
+            tasks={
+                "build": "npm run build",
+                "test": "npm test",
+            },
+            pipeline=["test", "build"],
+        ),
+    )
+    main(config)
