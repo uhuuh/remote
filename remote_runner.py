@@ -101,6 +101,76 @@ class SyncError(Exception):
     pass
 
 
+class ExecuteError(Exception):
+    pass
+
+
+class TaskExecutor:
+    def __init__(self, backend: BackendManager, config: ExecuteConfig):
+        self.backend = backend
+        self.config = config
+
+    def execute_pipeline(self) -> None:
+        for task_name in self.config.pipeline:
+            if task_name not in self.config.tasks:
+                raise ExecuteError(f"Task '{task_name}' not found in tasks dict")
+            command = self.config.tasks[task_name]
+            self._execute_task(task_name, command)
+
+    def _execute_task(self, name: str, command: str) -> None:
+        print(f"\n=== Executing task: {name} ===")
+        print(f"$ {command}")
+
+        full_command = f"cd {self.config.remote_path} && {command}"
+        cfg = self.backend._config
+        if cfg.type == "ssh":
+            import paramiko
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(
+                hostname=cfg.host,
+                port=cfg.port,
+                username=cfg.username,
+                password=cfg.password,
+            )
+            stdin, stdout, stderr = client.exec_command(
+                f"/bin/bash -l -c '{full_command.replace('\'', '\'\"\'\'')}'"
+            )
+            for line in stdout:
+                print(line, end="")
+            for line in stderr:
+                print(line, end="", file=sys.stderr)
+            exit_code = stdout.channel.recv_exit_status()
+            client.close()
+            if exit_code != 0:
+                raise ExecuteError(f"Task failed with exit code {exit_code}")
+        elif cfg.type == "docker":
+            proc = subprocess.Popen(
+                ["docker", "exec", cfg.container, "/bin/bash", "-l", "-c", full_command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            for line in proc.stdout:
+                print(line, end="")
+            for line in proc.stderr:
+                print(line, end="", file=sys.stderr)
+            proc.wait()
+            if proc.returncode != 0:
+                raise ExecuteError(f"Task failed with exit code {proc.returncode}")
+        elif cfg.type == "wsl":
+            result = subprocess.run(
+                ["wsl", "--", "/bin/bash", "-l", "-c", full_command],
+                capture_output=True,
+                text=True,
+            )
+            print(result.stdout)
+            if result.stderr:
+                print(result.stderr, file=sys.stderr)
+            if result.returncode != 0:
+                raise ExecuteError(f"Task failed with exit code {result.returncode}")
+
+
 class SyncManager:
     def __init__(self, backend: BackendManager, config: SyncConfig):
         self.backend = backend
