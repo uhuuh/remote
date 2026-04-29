@@ -1,4 +1,4 @@
-from mcp_bridge.backends.ssh import SSHBackend
+from remote_mcp.backends.ssh import SSHBackend
 
 def test_ssh_backend_init():
     backend = SSHBackend(

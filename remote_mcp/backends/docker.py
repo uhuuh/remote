@@ -1,5 +1,5 @@
 import docker
-from mcp_bridge.backends.base import BaseBackend
+from remote_mcp.backends.base import BaseBackend
 
 class DockerBackend(BaseBackend):
     def __init__(self, container: str):

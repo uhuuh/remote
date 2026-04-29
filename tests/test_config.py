@@ -1,6 +1,6 @@
 import os
 import tempfile
-from mcp_bridge.config import ConfigStore
+from remote_mcp.config import ConfigStore
 
 def test_config_store_save_and_load():
     store = ConfigStore("test_config.yaml")

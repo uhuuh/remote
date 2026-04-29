@@ -1,7 +1,7 @@
 import paramiko
 from typing import Optional
 import time
-from mcp_bridge.backends.base import BaseBackend
+from remote_mcp.backends.base import BaseBackend
 
 class SSHBackend(BaseBackend):
     def __init__(

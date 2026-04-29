@@ -1,5 +1,5 @@
 import subprocess
-from mcp_bridge.backends.base import BaseBackend
+from remote_mcp.backends.base import BaseBackend
 
 class WSLBackend(BaseBackend):
     def __init__(self):

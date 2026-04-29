@@ -1,8 +1,8 @@
 from typing import Optional, Literal
-from mcp_bridge.backends.base import BaseBackend
-from mcp_bridge.backends.ssh import SSHBackend
-from mcp_bridge.backends.docker import DockerBackend
-from mcp_bridge.backends.wsl import WSLBackend
+from remote_mcp.backends.base import BaseBackend
+from remote_mcp.backends.ssh import SSHBackend
+from remote_mcp.backends.docker import DockerBackend
+from remote_mcp.backends.wsl import WSLBackend
 
 class NoBackendInitialized(Exception):
     pass

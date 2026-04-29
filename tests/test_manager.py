@@ -1,5 +1,5 @@
 import pytest
-from mcp_bridge.manager import BackendManager, NoBackendInitialized
+from remote_mcp.manager import BackendManager, NoBackendInitialized
 
 def test_manager_no_backend_raises():
     manager = BackendManager()

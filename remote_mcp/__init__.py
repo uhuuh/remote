@@ -1,7 +1,7 @@
 from typing import Optional, Literal
 from fastmcp import FastMCP
-from mcp_bridge.config import ConfigStore
-from mcp_bridge.manager import BackendManager, NoBackendInitialized
+from remote_mcp.config import ConfigStore
+from remote_mcp.manager import BackendManager, NoBackendInitialized
 
 mcp = FastMCP("mcp-bridge")
 _config_store = ConfigStore("mcp-bridge-config.yaml")
@@ -17,8 +17,21 @@ def init_session(
     docker_container: Optional[str] = None,
 ) -> str:
     """
-    Initialize a session with the specified backend.
-    Configuration is saved locally for future sessions.
+    Initialize a session with the specified backend type.
+
+    Establishes a persistent connection to SSH, Docker, or WSL backend.
+    Configuration is saved to mcp-bridge-config.yaml for future sessions.
+
+    Args:
+        backend_type: Type of backend - "ssh", "docker", or "wsl"
+        ssh_host: SSH server hostname (required for ssh)
+        ssh_port: SSH server port (default: 22)
+        ssh_username: SSH username (required for ssh)
+        ssh_password: SSH password (optional, key auth attempted first)
+        docker_container: Docker container name or ID (required for docker)
+
+    Returns:
+        Success message or error description
     """
     config = {"backend": backend_type}
 
@@ -61,8 +74,16 @@ def init_session(
 @mcp.tool()
 def execute_command(command: str) -> str:
     """
-    Execute a command on the current backend.
-    Uses the same shell session as previous commands.
+    Execute a shell command on the active backend.
+
+    Executes the command within a persistent shell session, preserving state
+    across multiple commands (current directory, environment variables, etc.).
+
+    Args:
+        command: Shell command to execute
+
+    Returns:
+        Command output (stdout/stderr) or error message
     """
     try:
         return _manager.execute(command)
