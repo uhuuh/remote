@@ -1,10 +1,8 @@
 from typing import Optional, Literal
 from fastmcp import FastMCP
-from remote_mcp.config import ConfigStore
-from remote_mcp.manager import BackendManager, NoBackendInitialized
+from remote_mcp.manager import BackendManager, NoSessionError, ConnectionError, ConfigError
 
 mcp = FastMCP("mcp-bridge")
-_config_store = ConfigStore("mcp-bridge-config.yaml")
 _manager = BackendManager()
 
 @mcp.tool()
@@ -20,7 +18,6 @@ def init_session(
     Initialize a session with the specified backend type.
 
     Establishes a persistent connection to SSH, Docker, or WSL backend.
-    Configuration is saved to mcp-bridge-config.yaml for future sessions.
 
     Args:
         backend_type: Type of backend - "ssh", "docker", or "wsl"
@@ -33,18 +30,9 @@ def init_session(
     Returns:
         Success message or error description
     """
-    config = {"backend": backend_type}
-
     if backend_type == "ssh":
         if not ssh_host or not ssh_username:
-            return "Error: ssh_host and ssh_username are required for SSH backend"
-        config["ssh"] = {
-            "host": ssh_host,
-            "port": ssh_port,
-            "username": ssh_username,
-        }
-        if ssh_password:
-            config["ssh"]["password"] = ssh_password
+            return "配置错误: ssh_host 和 ssh_username 为必填项"
         try:
             _manager.init(
                 "ssh",
@@ -54,21 +42,19 @@ def init_session(
                 password=ssh_password,
             )
         except Exception as e:
-            return f"Failed to connect: {e}"
+            return f"连接失败: {e}"
 
     elif backend_type == "docker":
         if not docker_container:
-            return "Error: docker_container is required for Docker backend"
-        config["docker"] = {"container": docker_container}
+            return "配置错误: docker_container 为必填项"
         try:
             _manager.init("docker", container=docker_container)
         except Exception as e:
-            return f"Failed to connect: {e}"
+            return f"连接失败: {e}"
 
     elif backend_type == "wsl":
         _manager.init("wsl")
 
-    _config_store.save(config)
     return f"Session initialized with {backend_type} backend"
 
 @mcp.tool()
@@ -87,10 +73,10 @@ def execute_command(command: str) -> str:
     """
     try:
         return _manager.execute(command)
-    except NoBackendInitialized:
-        return "Error: No backend initialized. Call init_session first."
+    except NoSessionError:
+        return "错误: 请先调用 init_session 初始化会话"
     except Exception as e:
-        return f"Error: {e}"
+        return f"内部错误: {e}"
 
 def main():
-    mcp.run()
+    mcp.run(transport="http", host="0.0.0.0", port=7000)

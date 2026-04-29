@@ -4,7 +4,13 @@ from remote_mcp.backends.ssh import SSHBackend
 from remote_mcp.backends.docker import DockerBackend
 from remote_mcp.backends.wsl import WSLBackend
 
-class NoBackendInitialized(Exception):
+class NoSessionError(Exception):
+    pass
+
+class ConnectionError(Exception):
+    pass
+
+class ConfigError(Exception):
     pass
 
 class BackendManager:
@@ -23,13 +29,13 @@ class BackendManager:
         elif backend_type == "wsl":
             self._backend = WSLBackend()
         else:
-            raise ValueError(f"Unknown backend type: {backend_type}")
+            raise ConfigError(f"Unknown backend type: {backend_type}")
 
         self._backend_type = backend_type
 
     def execute(self, command: str) -> str:
         if not self._backend:
-            raise NoBackendInitialized("Call init_session first")
+            raise NoSessionError("请先调用 init_session 初始化会话")
         return self._backend.execute(command)
 
     def get_backend_type(self) -> Optional[Literal["ssh", "docker", "wsl"]]:

@@ -1,9 +1,9 @@
 import pytest
-from remote_mcp.manager import BackendManager, NoBackendInitialized
+from remote_mcp.manager import BackendManager, NoSessionError
 
 def test_manager_no_backend_raises():
     manager = BackendManager()
-    with pytest.raises(NoBackendInitialized):
+    with pytest.raises(NoSessionError):
         manager.execute("ls")
 
 def test_manager_init_ssh():
