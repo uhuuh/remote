@@ -28,6 +28,7 @@ class SyncConfig:
 class ExecuteConfig:
     tasks: Dict[str, str] = field(default_factory=dict)
     pipeline: List[str] = field(default_factory=list)
+    remote_path: str = ""
 
 
 @dataclass
@@ -334,21 +335,19 @@ def main(config: Config) -> None:
 if __name__ == "__main__":
     config = Config(
         connection=ConnectionConfig(
-            type="ssh",
-            host="example.com",
-            username="user",
-            password="pass",
+            type="docker",
+            container="verl"
         ),
         sync=SyncConfig(
-            enabled=True,
+            enabled=False,
             remote_path="/home/user/project",
         ),
         execute=ExecuteConfig(
             tasks={
-                "build": "npm run build",
-                "test": "npm test",
+                "test": "cd /workspace && pwd",
             },
-            pipeline=["test", "build"],
+            pipeline=["test"],
+            remote_path="/workspace",
         ),
     )
     main(config)
