@@ -49,8 +49,11 @@ class Config:
 ### 2. 同步代码（可选）
 - 仅当 `sync.enabled == True` 时执行
 - **Patch 生成**：本地执行 `git diff HEAD`，排除当前文件（`remote_runner.py`）
+- **Commit 创建**：本地创建提交
 - **Patch 应用**：通过 backend 上传 patch 内容，远程执行 `git apply`
+- **远程 Commit**：远程同样创建相应提交
 - **失败处理**：抛出 `SyncError` 异常，包含 stderr 详情
+- **严格模式**：任何 hunk 失败 → 抛出异常
 
 ### 3. 执行任务
 - 按 `pipeline` 顺序执行 `execute.tasks` 中的任务
