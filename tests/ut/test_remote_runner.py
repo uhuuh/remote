@@ -43,14 +43,15 @@ class TestConnectionConfig:
 class TestConfig:
     def test_full_config(self):
         config = Config(
-            connection=ConnectionConfig(type="ssh", host="localhost", username="user"),
-            sync=SyncConfig(enabled=True, remote_path="/remote/path"),
+            connection=ConnectionConfig(type="ssh", host="localhost", username="user", remote_path="/remote/path"),
+            sync=SyncConfig(enabled=True),
             execute=ExecuteConfig(
                 tasks={"build": "npm run build", "test": "npm test"},
                 pipeline=["test", "build"],
             ),
         )
         assert config.connection.type == "ssh"
+        assert config.connection.remote_path == "/remote/path"
         assert config.sync.enabled is True
         assert config.execute.pipeline == ["test", "build"]
 
@@ -88,9 +89,9 @@ class TestSyncManager:
         sync_mgr.sync("/some/file.py")
 
     def test_generate_patch_excludes_current_file(self):
-        config = ConnectionConfig(type="ssh", host="localhost", username="user")
+        config = ConnectionConfig(type="ssh", host="localhost", username="user", remote_path="/tmp")
         manager = BackendManager(config)
-        sync_config = SyncConfig(enabled=True, remote_path="/tmp")
+        sync_config = SyncConfig(enabled=True)
         sync_mgr = SyncManager(manager, sync_config)
 
         with patch('subprocess.run') as mock_run:

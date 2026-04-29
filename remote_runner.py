@@ -16,19 +16,18 @@ class ConnectionConfig:
     username: Optional[str] = None
     password: Optional[str] = None
     container: Optional[str] = None
+    remote_path: Optional[str] = None
 
 
 @dataclass
 class SyncConfig:
     enabled: bool = False
-    remote_path: str = ""
 
 
 @dataclass
 class ExecuteConfig:
     tasks: Dict[str, str] = field(default_factory=dict)
     pipeline: List[str] = field(default_factory=list)
-    remote_path: str = ""
 
 
 @dataclass
@@ -213,7 +212,8 @@ class TaskExecutor:
         print(f"\n=== Executing task: {name} ===")
         print(f"$ {command}")
 
-        full_command = f"cd {self.config.remote_path} && {command}"
+        remote_path = self.backend._config.remote_path
+        full_command = f"cd {remote_path} && {command}" if remote_path else command
         cfg = self.backend._config
         if cfg.type == "ssh":
             client = paramiko.SSHClient()
@@ -271,13 +271,17 @@ class SyncManager:
         if not self.config.enabled:
             return
 
+        remote_path = self.backend._config.remote_path
+        if not remote_path:
+            raise SyncError("sync.enabled requires remote_path to be set in connection config")
+
         patch = self._generate_patch(current_file)
         if not patch.strip():
             return
 
-        self._apply_patch(patch)
+        self._apply_patch(patch, remote_path)
         self._create_local_commit()
-        self._create_remote_commit()
+        self._create_remote_commit(remote_path)
 
     def _generate_patch(self, current_file: str) -> str:
         result = subprocess.run(
@@ -288,11 +292,11 @@ class SyncManager:
         )
         return result.stdout
 
-    def _apply_patch(self, patch: str) -> None:
+    def _apply_patch(self, patch: str, remote_path: str) -> None:
         if not patch.strip():
             return
 
-        apply_cmd = f"cd {self.config.remote_path} && git apply -"
+        apply_cmd = f"cd {remote_path} && git apply -"
         result = self.backend.execute_with_result(f"echo '{patch}' | {apply_cmd}")
 
         if result.returncode != 0:
@@ -309,11 +313,11 @@ class SyncManager:
         if result.returncode != 0 and "nothing to commit" not in result.stderr:
             raise SyncError(f"Failed to create local commit: {result.stderr}")
 
-    def _create_remote_commit(self) -> None:
+    def _create_remote_commit(self, remote_path: str) -> None:
         config = self.backend._config
         if config.type == "ssh":
             timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-            remote_cmd = f"cd {self.config.remote_path} && git add -A && git commit -m 'chore: sync {timestamp}'"
+            remote_cmd = f"cd {remote_path} && git add -A && git commit -m 'chore: sync {timestamp}'"
             result = self.backend.execute_with_result(remote_cmd)
             if result.returncode != 0 and "nothing to commit" not in result.stderr:
                 raise SyncError(f"Failed to create remote commit: {result.stderr if result.stderr else result.stdout}")
@@ -336,18 +340,17 @@ if __name__ == "__main__":
     config = Config(
         connection=ConnectionConfig(
             type="docker",
-            container="verl"
+            container="verl",
+            remote_path="/workspace",
         ),
         sync=SyncConfig(
             enabled=False,
-            remote_path="/home/user/project",
         ),
         execute=ExecuteConfig(
             tasks={
-                "test": "cd /workspace && pwd",
+                "test": "pwd",
             },
             pipeline=["test"],
-            remote_path="/workspace",
         ),
     )
     main(config)
