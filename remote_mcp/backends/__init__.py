@@ -1,1 +1,0 @@
-"""Backends for MCP Bridge."""

@@ -3,13 +3,9 @@ from typing import Dict, List, Literal, Optional
 import subprocess
 import os
 import sys
+import json
+import paramiko
 from datetime import datetime
-
-sys.path.insert(0, "/mnt/c/Users/uh/code/my/remote")
-
-from remote_mcp.backends.ssh import SSHBackend
-from remote_mcp.backends.docker import DockerBackend
-from remote_mcp.backends.wsl import WSLBackend
 
 
 @dataclass
@@ -39,6 +35,101 @@ class Config:
     connection: ConnectionConfig
     sync: SyncConfig = field(default_factory=SyncConfig)
     execute: ExecuteConfig = field(default_factory=ExecuteConfig)
+
+
+class SSHBackend:
+    def __init__(self, host: str, username: str, port: int = 22, password: Optional[str] = None):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self._client = None
+
+    def _connect(self) -> None:
+        if self._client is None:
+            self._client = paramiko.SSHClient()
+            self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                self._client.connect(
+                    hostname=self.host,
+                    port=self.port,
+                    username=self.username,
+                    key_filename=None,
+                    password=self.password,
+                    look_for_keys=True,
+                    allow_agent=True,
+                )
+            except paramiko.ssh_exception.SSHException:
+                if self.password:
+                    self._client.connect(
+                        hostname=self.host,
+                        port=self.port,
+                        username=self.username,
+                        password=self.password,
+                    )
+                else:
+                    raise
+
+    def execute(self, command: str) -> str:
+        self._connect()
+        stdin, stdout, stderr = self._client.exec_command(
+            f"/bin/bash -l -c '{command.replace('\'', '\'\"\'\'')}'"
+        )
+        output = stdout.read().decode("utf-8")
+        error = stderr.read().decode("utf-8")
+        return output + error
+
+    def close(self) -> None:
+        if self._client:
+            self._client.close()
+            self._client = None
+
+
+class DockerBackend:
+    def __init__(self, container: str):
+        self.container = container
+
+    def execute(self, command: str) -> str:
+        result = subprocess.run(
+            ["docker", "exec", self.container, "/bin/bash", "-l", "-c", command],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout + result.stderr
+
+    def close(self) -> None:
+        pass
+
+
+class WSLBackend:
+    def __init__(self):
+        self.wsl_distro = None
+
+    def _get_distro(self) -> str:
+        if self.wsl_distro is None:
+            result = subprocess.run(
+                ["wsl", "-l", "--json"],
+                capture_output=True,
+                text=True,
+            )
+            distros = json.loads(result.stdout)
+            if distros:
+                self.wsl_distro = distros[0].get("name", "Ubuntu")
+            else:
+                self.wsl_distro = "Ubuntu"
+        return self.wsl_distro
+
+    def execute(self, command: str) -> str:
+        distro = self._get_distro()
+        result = subprocess.run(
+            ["wsl", "-d", distro, "--", "/bin/bash", "-l", "-c", command],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout + result.stderr
+
+    def close(self) -> None:
+        pass
 
 
 class CommandResult:
@@ -124,7 +215,6 @@ class TaskExecutor:
         full_command = f"cd {self.config.remote_path} && {command}"
         cfg = self.backend._config
         if cfg.type == "ssh":
-            import paramiko
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(
