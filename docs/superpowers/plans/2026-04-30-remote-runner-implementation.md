@@ -4,7 +4,7 @@
 
 **Goal:** 单文件 Python 工具，连接远程后端、同步代码、执行任务
 
-**Architecture:** 复用现有 BackendManager 和 backends，新增高光顶部的 SyncManager 和 TaskExecutor
+**Architecture:** 复用现有 BackendManager 和 backends，新增 SyncManager 和 TaskExecutor
 
 **Tech Stack:** Python 标准库 + paramiko + docker-py
 
@@ -31,12 +31,12 @@ from typing import Dict, List, Literal, Optional
 
 @dataclass
 class ConnectionConfig:
-    backend: Literal["ssh", "docker", "wsl"]
-    ssh_host: Optional[str] = None
-    ssh_port: int = 22
-    ssh_username: Optional[str] = None
-    ssh_password: Optional[str] = None
-    docker_container: Optional[str] = None
+    type: Literal["ssh", "docker", "wsl"]
+    host: Optional[str] = None
+    port: int = 22
+    username: Optional[str] = None
+    password: Optional[str] = None
+    container: Optional[str] = None
 
 
 @dataclass
@@ -73,7 +73,7 @@ git commit -m "feat: add config dataclasses"
 - Modify: `remote_runner.py:51-100`（追加）
 - Reuse: `remote_mcp/backends/ssh.py`, `remote_mcp/backends/docker.py`, `remote_mcp/backends/wsl.py`, `remote_mcp/manager.py`
 
-- [ ] **Step 1: Import backends and define NoSessionError**
+- [ ] **Step 1: Import backends and define BackendManager**
 
 ```python
 import sys
@@ -82,33 +82,32 @@ sys.path.insert(0, "/mnt/c/Users/uh/code/my/remote")
 from remote_mcp.backends.ssh import SSHBackend
 from remote_mcp.backends.docker import DockerBackend
 from remote_mcp.backends.wsl import WSLBackend
-from remote_mcp.manager import NoSessionError
 
 
 class BackendManager:
     def __init__(self, config: ConnectionConfig):
-        self._backend: Optional[BaseBackend] = None
+        self._backend = None
         self._config = config
 
-    def _create_backend(self) -> BaseBackend:
+    def _create_backend(self):
         cfg = self._config
-        if cfg.backend == "ssh":
-            if not cfg.ssh_host or not cfg.ssh_username:
-                raise ValueError("ssh_host and ssh_username are required for SSH backend")
+        if cfg.type == "ssh":
+            if not cfg.host or not cfg.username:
+                raise ValueError("host and username are required for SSH backend")
             return SSHBackend(
-                host=cfg.ssh_host,
-                port=cfg.ssh_port,
-                username=cfg.ssh_username,
-                password=cfg.ssh_password,
+                host=cfg.host,
+                port=cfg.port,
+                username=cfg.username,
+                password=cfg.password,
             )
-        elif cfg.backend == "docker":
-            if not cfg.docker_container:
-                raise ValueError("docker_container is required for Docker backend")
-            return DockerBackend(container=cfg.docker_container)
-        elif cfg.backend == "wsl":
+        elif cfg.type == "docker":
+            if not cfg.container:
+                raise ValueError("container is required for Docker backend")
+            return DockerBackend(container=cfg.container)
+        elif cfg.type == "wsl":
             return WSLBackend()
         else:
-            raise ValueError(f"Unknown backend type: {cfg.backend}")
+            raise ValueError(f"Unknown backend type: {cfg.type}")
 
     def execute(self, command: str) -> str:
         if not self._backend:
@@ -140,6 +139,7 @@ git commit -m "feat: add BackendManager class"
 ```python
 import subprocess
 import os
+from datetime import datetime
 
 
 class SyncError(Exception):
@@ -165,7 +165,7 @@ class SyncManager:
 
     def _generate_patch(self, current_file: str) -> str:
         result = subprocess.run(
-            ["git", "diff", "HEAD", "--", ":!' + current_file + "'"],
+            ["git", "diff", "HEAD", "--", ":!'" + current_file + "'"],
             capture_output=True,
             text=True,
             cwd=os.path.dirname(os.path.abspath(current_file)) or ".",
@@ -184,8 +184,9 @@ class SyncManager:
 
     def _create_local_commit(self) -> None:
         subprocess.run(["git", "add", "-A"], capture_output=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         result = subprocess.run(
-            ["git", "commit", "-m", "chore: sync from remote_runner"],
+            ["git", "commit", "-m", f"chore: sync {timestamp}"],
             capture_output=True,
             text=True,
         )
@@ -194,9 +195,10 @@ class SyncManager:
 
     def _create_remote_commit(self) -> None:
         config = self.backend._config
-        if config.backend == "ssh":
-            remote_add = f"cd {self.config.remote_path} && git add -A && git commit -m 'chore: sync from remote_runner'"
-            result = self.backend.execute(remote_add)
+        if config.type == "ssh":
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            remote_cmd = f"cd {self.config.remote_path} && git add -A && git commit -m 'chore: sync {timestamp}'"
+            result = self.backend.execute(remote_cmd)
             if result.returncode != 0 and "nothing to commit" not in result.stderr:
                 raise SyncError(f"Failed to create remote commit: {result.stderr}")
 ```
@@ -219,6 +221,7 @@ git commit -m "feat: add SyncManager for code synchronization"
 
 ```python
 import subprocess
+import sys
 
 
 class ExecuteError(Exception):
@@ -266,30 +269,10 @@ git commit -m "feat: add TaskExecutor with real-time output"
 **Files:**
 - Modify: `remote_runner.py:241-280`（追加）
 
-- [ ] **Step 1: Define main() function**
+- [ ] **Step 1: Define main() function accepting config parameter**
 
 ```python
-def main():
-    config = Config(
-        connection=ConnectionConfig(
-            backend="ssh",
-            ssh_host="example.com",
-            ssh_username="user",
-            ssh_password="pass",
-        ),
-        sync=SyncConfig(
-            enabled=True,
-            remote_path="/home/user/project",
-        ),
-        execute=ExecuteConfig(
-            tasks={
-                "build": "npm run build",
-                "test": "npm test",
-            },
-            pipeline=["test", "build"],
-        ),
-    )
-
+def main(config: Config) -> None:
     manager = BackendManager(config.connection)
     try:
         if config.sync.enabled:
@@ -303,7 +286,26 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    config = Config(
+        connection=ConnectionConfig(
+            type="ssh",
+            host="example.com",
+            username="user",
+            password="pass",
+        ),
+        sync=SyncConfig(
+            enabled=True,
+            remote_path="/home/user/project",
+        ),
+        execute=ExecuteConfig(
+            tasks={
+                "build": "npm run build",
+                "test": "npm test",
+            },
+            pipeline=["test", "build"],
+        ),
+    )
+    main(config)
 ```
 
 - [ ] **Step 2: Commit**
@@ -329,7 +331,7 @@ from remote_runner import SyncManager, SyncConfig, BackendManager, ConnectionCon
 
 class TestSyncManager:
     def test_generate_patch_excludes_current_file(self):
-        config = ConnectionConfig(backend="ssh", ssh_host="localhost", ssh_username="user")
+        config = ConnectionConfig(type="ssh", host="localhost", username="user")
         backend = BackendManager(config)
         sync_config = SyncConfig(enabled=True, remote_path="/tmp")
         manager = SyncManager(backend, sync_config)
@@ -342,22 +344,12 @@ class TestSyncManager:
 
 ```python
 class TestTaskExecutor:
-    def test_execute_pipeline_success(self):
-        config = ConnectionConfig(backend="ssh", ssh_host="localhost", ssh_username="user")
-        backend = BackendManager(config)
-        exec_config = ExecuteConfig(
-            tasks={"test": "echo hello"},
-            pipeline=["test"],
-        )
-        executor = TaskExecutor(backend, exec_config)
-        # Mock backend.execute to return success
-
     def test_execute_pipeline_task_not_found(self):
-        config = ConnectionConfig(backend="ssh", ssh_host="localhost", ssh_username="user")
+        config = ConnectionConfig(type="ssh", host="localhost", username="user")
         backend = BackendManager(config)
         exec_config = ExecuteConfig(
             tasks={"build": "echo build"},
-            pipeline=["test"],  # test not in tasks
+            pipeline=["test"],
         )
         executor = TaskExecutor(backend, exec_config)
         with pytest.raises(ExecuteError, match="Task 'test' not found"):
