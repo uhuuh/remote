@@ -1,4 +1,5 @@
 import subprocess
+import time
 from remote_mcp.backends.base import BaseBackend
 
 class WSLBackend(BaseBackend):
@@ -29,11 +30,15 @@ class WSLBackend(BaseBackend):
         )
 
         output = b""
+        start_time = time.time()
         while True:
             chunk = process.stdout.read(1024)
-            if not chunk:
+            if chunk:
+                output += chunk
+            elif time.time() - start_time > 1:
                 break
-            output += chunk
+            else:
+                time.sleep(0.1)
 
         process.wait()
         return output.decode("utf-8", errors="replace")
