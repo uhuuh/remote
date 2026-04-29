@@ -1,6 +1,5 @@
 import paramiko
 from typing import Optional
-import time
 from remote_mcp.backends.base import BaseBackend
 
 class SSHBackend(BaseBackend):
@@ -16,54 +15,51 @@ class SSHBackend(BaseBackend):
         self.username = username
         self.password = password
         self._client: Optional[paramiko.SSHClient] = None
-        self._channel = None
 
     def _connect(self) -> None:
-        self._client = paramiko.SSHClient()
-        self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if self._client is None:
+            self._client = paramiko.SSHClient()
+            self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        try:
-            self._client.connect(
-                hostname=self.host,
-                port=self.port,
-                username=self.username,
-                key_filename=None,
-                password=self.password,
-                look_for_keys=True,
-                allow_agent=True,
-            )
-        except paramiko.ssh_exception.SSHException:
-            if self.password:
+            try:
                 self._client.connect(
                     hostname=self.host,
                     port=self.port,
                     username=self.username,
+                    key_filename=None,
                     password=self.password,
+                    look_for_keys=True,
+                    allow_agent=True,
                 )
-            else:
-                raise
-
-        self._channel = self._client.invoke_shell()
-        self._channel.transport.set_keepalive(30)
+            except paramiko.ssh_exception.SSHException:
+                if self.password:
+                    self._client.connect(
+                        hostname=self.host,
+                        port=self.port,
+                        username=self.username,
+                        password=self.password,
+                    )
+                else:
+                    raise
 
     def execute(self, command: str) -> str:
-        if not self._client:
-            self._connect()
+        self._connect()
 
-        self._channel.send(command + "\n")
+        stdin, stdout, stderr = self._client.exec_command(
+            f"/bin/bash -l -c '{command.replace('\'', '\'\"\'\'')}'"
+        )
+
         output = ""
         while True:
-            if self._channel.recv_ready():
-                data = self._channel.recv(1024).decode("utf-8")
-                output += data
-                if "$" in output or "#" in output:
-                    break
-            else:
-                time.sleep(0.1)
-        return output
+            chunk = stdout.read(1024)
+            if not chunk:
+                break
+            output += chunk.decode("utf-8")
+
+        error = stderr.read().decode("utf-8")
+        return output + error
 
     def close(self) -> None:
         if self._client:
             self._client.close()
             self._client = None
-            self._channel = None

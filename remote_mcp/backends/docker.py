@@ -6,12 +6,21 @@ class DockerBackend(BaseBackend):
         self.container = container
 
     def execute(self, command: str) -> str:
-        result = subprocess.run(
+        process = subprocess.Popen(
             ["docker", "exec", "-i", self.container, "/bin/bash", "-l", "-c", command],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        return result.stdout + result.stderr
+
+        output = b""
+        while True:
+            chunk = process.stdout.read(1024)
+            if not chunk:
+                break
+            output += chunk
+
+        process.wait()
+        return output.decode("utf-8", errors="replace")
 
     def close(self) -> None:
         pass
