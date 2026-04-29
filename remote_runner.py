@@ -21,7 +21,15 @@ class ConnectionConfig:
 
 @dataclass
 class SyncConfig:
-    enabled: bool = False
+    """Configuration for code synchronization.
+
+    Fields:
+        sync: Whether to sync local changes to remote backend path.
+        commit: Whether to create automatic commits on both local and remote.
+                Requires sync=True to be set.
+    """
+    sync: bool = False
+    commit: bool = False
 
 
 @dataclass
@@ -268,20 +276,34 @@ class SyncManager:
         self.config = config
 
     def sync(self, current_file: str) -> None:
-        if not self.config.enabled:
+        """Sync local changes to remote and optionally commit.
+
+        Args:
+            current_file: Path to the current file (used to exclude it from patch).
+
+        Raises:
+            SyncError: If commit=True but sync=False, or if remote_path is not set.
+        """
+        if not self.config.sync and not self.config.commit:
             return
+
+        if self.config.commit and not self.config.sync:
+            raise SyncError("commit=True requires sync=True")
 
         remote_path = self.backend._config.remote_path
         if not remote_path:
-            raise SyncError("sync.enabled requires remote_path to be set in connection config")
+            raise SyncError("sync or commit requires remote_path")
 
         patch = self._generate_patch(current_file)
         if not patch.strip():
             return
 
-        self._apply_patch(patch, remote_path)
-        self._create_local_commit()
-        self._create_remote_commit(remote_path)
+        if self.config.sync:
+            self._apply_patch(patch, remote_path)
+
+        if self.config.commit:
+            self._create_local_commit()
+            self._create_remote_commit(remote_path)
 
     def _generate_patch(self, current_file: str) -> str:
         result = subprocess.run(
@@ -344,7 +366,8 @@ if __name__ == "__main__":
             remote_path="/workspace",
         ),
         sync=SyncConfig(
-            enabled=False,
+            sync=True,
+            commit=True,
         ),
         execute=ExecuteConfig(
             tasks={

@@ -44,7 +44,7 @@ class TestConfig:
     def test_full_config(self):
         config = Config(
             connection=ConnectionConfig(type="ssh", host="localhost", username="user", remote_path="/remote/path"),
-            sync=SyncConfig(enabled=True),
+            sync=SyncConfig(sync=True),
             execute=ExecuteConfig(
                 tasks={"build": "npm run build", "test": "npm test"},
                 pipeline=["test", "build"],
@@ -52,7 +52,7 @@ class TestConfig:
         )
         assert config.connection.type == "ssh"
         assert config.connection.remote_path == "/remote/path"
-        assert config.sync.enabled is True
+        assert config.sync.sync is True
         assert config.execute.pipeline == ["test", "build"]
 
 
@@ -79,11 +79,26 @@ class TestBackendManager:
         assert result.returncode == 1
 
 
+class TestSyncConfig:
+    def test_sync_config_new_structure(self):
+        config = SyncConfig(sync=True, commit=True)
+        assert config.sync is True
+        assert config.commit is True
+
+        config2 = SyncConfig(sync=True, commit=False)
+        assert config2.sync is True
+        assert config2.commit is False
+
+        config3 = SyncConfig(sync=False, commit=False)
+        assert config3.sync is False
+        assert config3.commit is False
+
+
 class TestSyncManager:
     def test_sync_disabled_does_nothing(self):
         config = ConnectionConfig(type="ssh", host="localhost", username="user")
         manager = BackendManager(config)
-        sync_config = SyncConfig(enabled=False)
+        sync_config = SyncConfig(sync=False)
         sync_mgr = SyncManager(manager, sync_config)
 
         sync_mgr.sync("/some/file.py")
@@ -91,7 +106,7 @@ class TestSyncManager:
     def test_generate_patch_excludes_current_file(self):
         config = ConnectionConfig(type="ssh", host="localhost", username="user", remote_path="/tmp")
         manager = BackendManager(config)
-        sync_config = SyncConfig(enabled=True)
+        sync_config = SyncConfig(sync=True)
         sync_mgr = SyncManager(manager, sync_config)
 
         with patch('subprocess.run') as mock_run:
