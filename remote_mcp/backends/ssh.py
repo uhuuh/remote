@@ -1,5 +1,4 @@
 import paramiko
-import time
 from typing import Optional
 from remote_mcp.backends.base import BaseBackend
 
@@ -50,17 +49,7 @@ class SSHBackend(BaseBackend):
             f"/bin/bash -l -c '{command.replace('\'', '\'\"\'\'')}'"
         )
 
-        output = ""
-        start_time = time.time()
-        while True:
-            chunk = stdout.read(1024)
-            if chunk:
-                output += chunk.decode("utf-8")
-            elif time.time() - start_time > 1:
-                break
-            else:
-                time.sleep(0.1)
-
+        output = stdout.read().decode("utf-8")
         error = stderr.read().decode("utf-8")
         return output + error
 
